@@ -1,0 +1,1 @@
+[2024-10-27T18-45-52.748Z] [BACKEND] Backend - API: New conversation request {"prompt":"mammy","responses":[{"model":"GPT-3","text":"Placeholder response for GPT-3."},{"model":"LLaMA-2","text":"Placeholder response for LLaMA-2."}]}

@@ -1,0 +1,1 @@
+[2024-10-27T18-11-24.296Z] [BACKEND] Backend - Database: Conversation saved successfully {"id":48,"conversation_id":1730052684296,"history":[{"prompt":"another convo","model":"GPT-3","response":"Placeholder response for GPT-3.","db_id":48},{"prompt":"another convo","model":"LLaMA-2","response":"Placeholder response for LLaMA-2.","db_id":48}]}
