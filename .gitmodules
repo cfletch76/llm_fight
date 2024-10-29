@@ -1,0 +1,3 @@
+[submodule "backend/models/llama-integration/llama-models"]
+	path = backend/models/llama-integration/llama-models
+	url = https://github.com/meta-llama/llama-models
