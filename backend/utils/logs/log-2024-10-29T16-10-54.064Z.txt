@@ -1,0 +1,1 @@
+[2024-10-29T16-10-54.064Z] [BACKEND] Backend - Database: Failed to save conversation {"error":{"errno":19,"code":"SQLITE_CONSTRAINT"},"query":"\n    INSERT INTO conversations (conversation_id, prompt, model, response)\n    VALUES (?, ?, ?, ?)\n  ","values":["1730218254050","new convo","LLaMA-3.2-11B-Vision-Instruct",null]}

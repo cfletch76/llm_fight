@@ -1,0 +1,1 @@
+[2024-10-30T21-42-21.653Z] [BACKEND] Backend - anthropic: Generating response {"model":"claude-3-opus-20240229","prompt":"What is the general theory of relativity?"}

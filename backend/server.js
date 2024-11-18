@@ -1,9 +1,16 @@
+process.removeAllListeners('warning');
+require('dotenv').config();
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 const { logBackend } = require('./utils/logger');
+const openAIService = require('./services/openai-service');
+const anthropicService = require('./services/anthropic-service');
+const llamaService = require('./services/llama-service');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -23,6 +30,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         conversation_id TEXT NOT NULL,
         prompt TEXT NOT NULL,
+        provider TEXT NOT NULL,
         model TEXT NOT NULL,
         response TEXT NOT NULL,
         preferred_model TEXT,
@@ -38,20 +46,45 @@ const db = new sqlite3.Database(dbPath, (err) => {
   }
 });
 
+const modelServices = {
+  openai: openAIService,
+  anthropic: anthropicService,
+  meta: llamaService
+};
+
+app.get('/api/models', async (req, res) => {
+  try {
+    const [openAIModels, anthropicModels] = await Promise.all([
+      openAIService.getAvailableModels(),
+      anthropicService.getAvailableModels()
+    ]);
+
+    const models = {
+      openai: openAIModels,
+      anthropic: anthropicModels,
+      meta: {
+        'llama-3-70b': 'LLaMA 3 70B',
+        'llama-2-70b': 'LLaMA 2 70B',
+        'llama-2-13b': 'LLaMA 2 13B'
+      }
+    };
+
+    res.json(models);
+  } catch (error) {
+    logBackend('API', 'Error fetching models', { error });
+    res.status(500).json({ error: 'Failed to fetch models' });
+  }
+});
+
 app.get('/api/conversations', (req, res) => {
   const query = `
-    SELECT DISTINCT 
-      c1.conversation_id,
-      c1.prompt as initial_prompt,
-      c1.timestamp
-    FROM conversations c1
-    INNER JOIN (
-      SELECT conversation_id, MIN(timestamp) as first_timestamp
-      FROM conversations
-      GROUP BY conversation_id
-    ) c2 ON c1.conversation_id = c2.conversation_id 
-    AND c1.timestamp = c2.first_timestamp
-    ORDER BY c1.timestamp DESC
+    SELECT DISTINCT
+      conversation_id,
+      prompt as initial_prompt,
+      MIN(timestamp) as timestamp
+    FROM conversations
+    GROUP BY conversation_id
+    ORDER BY timestamp DESC
   `;
 
   db.all(query, [], (err, rows) => {
@@ -76,36 +109,63 @@ app.get('/api/conversations/:id', (req, res) => {
       const logUrl = logBackend('Database', 'Failed to fetch conversation details', { error: err });
       return res.status(500).json({ error: 'Failed to fetch data', logUrl });
     }
-    res.json(rows);
+
+    const groupedResponses = rows.reduce((acc, row) => {
+      if (!acc[row.prompt]) {
+        acc[row.prompt] = {
+          prompt: row.prompt,
+          responses: {},
+          preferredModel: row.preferred_model,
+          timestamp: row.timestamp,
+          conversation_id: row.conversation_id
+        };
+      }
+      acc[row.prompt].responses[row.provider] = {
+        id: row.id,
+        model: row.model,
+        response: row.response
+      };
+      return acc;
+    }, {});
+
+    res.json(Object.values(groupedResponses));
   });
 });
 
-app.post('/api/conversations', (req, res) => {
-  const { conversation_id, prompt, model, response } = req.body;
+app.post('/api/generate', async (req, res) => {
+  const { prompt, conversationId, provider, modelVersion } = req.body;
+  const actualConversationId = conversationId || uuidv4();
   
-  const insertQuery = `
-    INSERT INTO conversations (conversation_id, prompt, model, response)
-    VALUES (?, ?, ?, ?)
-  `;
-  
-  db.run(insertQuery, [conversation_id, prompt, model, response], function(err) {
-    if (err) {
-      const logUrl = logBackend('Database', 'Failed to save conversation', {
-        error: err,
-        query: insertQuery,
-        values: [conversation_id, prompt, model, response]
+  try {
+    logBackend(provider, 'Generating response', { model: modelVersion, prompt });
+    const service = modelServices[provider];
+    const response = await service.generateResponse(prompt, modelVersion);
+
+    const insertQuery = `
+      INSERT INTO conversations (conversation_id, prompt, provider, model, response)
+      VALUES (?, ?, ?, ?, ?)
+    `;
+
+    db.run(insertQuery, [actualConversationId, prompt, provider, response.model, response.response], function(err) {
+      if (err) {
+        const logUrl = logBackend('Database', 'Failed to save conversation', {
+          error: err,
+          query: insertQuery,
+          values: [actualConversationId, prompt, provider, response.model, response.response]
+        });
+        return res.status(500).json({ error: 'Failed to save data', logUrl });
+      }
+
+      res.json({
+        id: this.lastID,
+        conversation_id: actualConversationId,
+        ...response
       });
-      return res.status(500).json({ error: 'Failed to save data', logUrl });
-    }
-    
-    res.json({
-      id: this.lastID,
-      conversation_id,
-      prompt,
-      model,
-      response
     });
-  });
+  } catch (error) {
+    const logUrl = logBackend('API', 'Model generation failed', { error });
+    res.status(500).json({ error: 'Failed to generate response', logUrl });
+  }
 });
 
 app.put('/api/conversations/:id/preferred', (req, res) => {
@@ -113,9 +173,12 @@ app.put('/api/conversations/:id/preferred', (req, res) => {
   const { preferredModel, prompt } = req.body;
 
   const updateQuery = `
-    UPDATE conversations 
-    SET preferred_model = ? 
-    WHERE id = ? AND prompt = ?
+    UPDATE conversations
+    SET preferred_model = ?
+    WHERE conversation_id = (
+      SELECT conversation_id FROM conversations WHERE id = ?
+    )
+    AND prompt = ?
   `;
 
   db.run(updateQuery, [preferredModel, id, prompt], function(err) {
@@ -138,21 +201,17 @@ app.put('/api/conversations/:id/preferred', (req, res) => {
   });
 });
 
-// Add this endpoint to the existing server.js
 app.post('/api/conversations/clear', (req, res) => {
   const query = 'DELETE FROM conversations';
-  
   db.run(query, [], (err) => {
     if (err) {
       const logUrl = logBackend('Database', 'Failed to clear conversations', { error: err });
       return res.status(500).json({ error: 'Failed to clear data', logUrl });
     }
-    
     logBackend('Database', 'Successfully cleared all conversations');
     res.json({ message: 'All conversations cleared successfully' });
   });
 });
-
 
 app.listen(PORT, () => {
   const message = `Server started on port ${PORT}`;

@@ -1,0 +1,1 @@
+[2024-10-30T20-01-24.002Z] [BACKEND] Backend - anthropic: Generating response {"model":"claude-3.5-sonnet","prompt":"Who was the second president of the united states"}

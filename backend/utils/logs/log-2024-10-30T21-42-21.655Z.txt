@@ -1,0 +1,1 @@
+[2024-10-30T21-42-21.655Z] [BACKEND] Backend - meta: Generating response {"model":"llama-3-70b","prompt":"What is the general theory of relativity?"}

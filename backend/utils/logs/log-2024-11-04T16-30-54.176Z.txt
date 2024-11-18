@@ -1,0 +1,1 @@
+[2024-11-04T16-30-54.176Z] [BACKEND] Backend - openai: Generating response {"model":"gpt-4-turbo-2024-04-09","prompt":"what are 3 things you can do to prepare for an interview that will put you in the best mindset."}

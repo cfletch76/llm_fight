@@ -1,0 +1,1 @@
+[2024-10-30T22-24-43.361Z] [BACKEND] Backend - meta: Generating response {"model":"llama-3-70b","prompt":"who was karl popper?"}

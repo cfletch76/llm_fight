@@ -1,0 +1,1 @@
+[2024-10-29T16-56-49.937Z] [BACKEND] Backend - Database: Connected to SQLite database {}
